@@ -18,26 +18,18 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/sanity-io/litter"
-	"gopkg.in/yaml.v2"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/util/homedir"
+	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/sanity-io/litter"
+	"gopkg.in/yaml.v2"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
-	//
-	// Uncomment to load all auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth"
-	//
-	// Or uncomment to load specific auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/azure"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/openstack"
 )
 
 func main() {
@@ -60,34 +52,44 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-	serviceList, err := clientset.CoreV1().Services("beta").List(context.TODO(), metav1.ListOptions{})
+
+	cm := &corev1.ConfigMap{}
+	cm.Name = os.Getenv("configmap_name")
+	cm.Namespace = os.Getenv("namespace")
+
+	serviceList, err := clientset.CoreV1().Services(cm.Namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
 
 	fmt.Printf("There are %d services in the cluster\n", len(serviceList.Items))
 
-	cm := &v1.ConfigMap{}
-	cm.Name = "grpc-endpoints"
-	cm.Namespace = "beta"
-	endpoints := make([]Endpoint, 0)
+	endpoints := make(map[string][]Endpoint)
+	protocols := strings.Split(os.Getenv("protocols"), ",")
+	for i := range protocols {
+		protocols[i] = strings.Trim(protocols[i], " ")
+		endpoints[protocols[i]] = make([]Endpoint, 0)
+	}
 	for i := range serviceList.Items {
 		for j := range serviceList.Items[i].Spec.Ports {
-			if strings.Index(serviceList.Items[i].Spec.Ports[j].Name, "grpc") > -1 {
-				var port int
-				switch serviceList.Items[i].Spec.Ports[j].TargetPort.String() {
-				case "http":
-					port = 80
-				case "https":
-					port = 443
-				default:
-					port = serviceList.Items[i].Spec.Ports[j].TargetPort.IntValue()
+			for n := range protocols {
+				if strings.Index(serviceList.Items[i].Spec.Ports[j].Name, protocols[n]) > -1 {
+					var port int
+					switch serviceList.Items[i].Spec.Ports[j].TargetPort.String() {
+					case "http":
+						port = 80
+					case "https":
+						port = 443
+					default:
+						port = serviceList.Items[i].Spec.Ports[j].TargetPort.IntValue()
+					}
+					endpoints[protocols[n]] = append(endpoints[protocols[n]], Endpoint{
+						Name:     serviceList.Items[i].Name,
+						Endpoint: fmt.Sprintf("%s.%s:%d", serviceList.Items[i].Name, "beta", port),
+					})
 				}
-				endpoints = append(endpoints, Endpoint{
-					Name:     serviceList.Items[i].Name,
-					Endpoint: fmt.Sprintf("%s.%s:%d", serviceList.Items[i].Name, "beta", port),
-				})
 			}
+
 		}
 	}
 	out, err := yaml.Marshal(endpoints)
@@ -95,15 +97,15 @@ func main() {
 		panic(err)
 	}
 	cm.Data = map[string]string{
-		"endpoints.yaml": string(out),
+		os.Getenv("config_name"): string(out),
 	}
 
-	_, err = clientset.CoreV1().ConfigMaps("beta").Get(context.TODO(), "grpc-endpoints", metav1.GetOptions{})
+	_, err = clientset.CoreV1().ConfigMaps(cm.Namespace).Get(context.TODO(), cm.Name, metav1.GetOptions{})
 
 	if errors.IsNotFound(err) {
-		cm, err = clientset.CoreV1().ConfigMaps("beta").Create(context.TODO(), cm, metav1.CreateOptions{})
+		cm, err = clientset.CoreV1().ConfigMaps(cm.Namespace).Create(context.TODO(), cm, metav1.CreateOptions{})
 	} else {
-		cm, err = clientset.CoreV1().ConfigMaps("beta").Update(context.TODO(), cm, metav1.UpdateOptions{})
+		cm, err = clientset.CoreV1().ConfigMaps(cm.Namespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
 	}
 	//查询是否存在
 	if err != nil {
