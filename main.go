@@ -16,35 +16,46 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"k8s.io/client-go/util/homedir"
+	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/sanity-io/litter"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 )
 
 func main() {
-	var kubeconfig *string
-	if home := homedir.HomeDir(); home != "" {
-		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	} else {
-		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-	}
-	flag.Parse()
+	//var kubeconfig *string
+	//if home := homedir.HomeDir(); home != "" {
+	//	kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+	//} else {
+	//	kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+	//}
+	//flag.Parse()
 
 	// use the current context in kubeconfig
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	//config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	//if err != nil {
+	//	panic(err.Error())
+	//}
+
+	clusterUrl, err := url.Parse(os.Getenv("cluster_url"))
 	if err != nil {
-		panic(err.Error())
+		panic(err)
+	}
+
+	config := &rest.Config{
+		Host:    clusterUrl.Host,
+		APIPath: clusterUrl.Path,
+		TLSClientConfig: rest.TLSClientConfig{
+			Insecure: true,
+		},
+		BearerToken: os.Getenv("token"),
 	}
 
 	// create the clientset
@@ -111,7 +122,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	litter.Dump(cm)
 }
 
 type Endpoint struct {

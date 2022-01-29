@@ -1,0 +1,37 @@
+name: 'endpoint-discover'
+description: 'endpoint discover action'
+inputs:
+  cluster-url:
+    description: 'k8s api server url'
+    required: true
+    default: ''
+  token:
+    description: 'k8s api token'
+    required: true
+    default: ''
+  configmap-name:
+    description: 'configmap name'
+    required: true
+    default: 'endpoint-discover'
+  namespace:
+    description: 'namespace'
+    required: true
+    default: 'default'
+  protocols:
+    description: 'protocols'
+    required: true
+    default: 'grpc,http'
+  config-name:
+    description: 'config file name'
+    required: true
+    default: 'endpoints.yml'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.cluster-url}}
+    - ${{ inputs.token }}
+    - ${{ inputs.configmap-name }}
+    - ${{ inputs.namespace }}
+    - ${{ inputs.protocols }}
+    - ${{ inputs.config-name }}

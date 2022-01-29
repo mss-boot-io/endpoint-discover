@@ -1,0 +1,104 @@
+name: Self
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go 1.17
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.17
+        id: go
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Build
+        run: |
+          go mod tidy
+          go mod vendor
+          make build
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=auto
+          tags: |
+            type=schedule
+            type=ref,event=tag
+            type=sha,prefix=,format=long,enable=true,priority=100
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          file: Dockerfile.app
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: "3.8"
+      - uses: aws-actions/setup-sam@v1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - id: install
+        uses: azure/setup-kubectl@v2.0
+
+      - name: Update Kubeconfig
+        run: aws eks --region ${{ secrets.AWS_REGION }} update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }}
+
+      - id: kubeconfig
+        name: Kubeconfig Params
+        run: |
+          export cluster_url=`kubectl cluster-info | grep -E '(https):[-A-Za-z0-9+&@#/%?=~_|.;]+[-A-Za-z0-9+&@#/%=~_|]' -o -m 1`
+          export token=`kubectl -n kube-system get secret $(kubectl -n kube-system get secret | grep argocd-manager | awk '{print $1}') -o jsonpath='{.data.token}' | base64 --decode`
+          echo "::set-output name=cluster_url::${cluster_url}"
+          echo "::set-output name=token::${token}"
+
+      - name: User This Tag
+        run: sed -i "s/latest/${{ github.sha }}/g"  Dockerfile.app
+
+      - name: Self
+        uses: ./
+        with:
+          cluster-url: ${{ steps.kubeconfig.outputs.cluster_url }}
+          token: ${{ steps.kubeconfig.outputs.token }}
+          configmap-name: endpoint-discover
+          namespace: beta
+          protocols: 'grpc,http'
+          config-name: 'endpoints.yml'
+
