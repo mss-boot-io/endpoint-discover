@@ -16,9 +16,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
-	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -26,37 +27,38 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/homedir"
 )
 
 func main() {
-	//var kubeconfig *string
-	//if home := homedir.HomeDir(); home != "" {
-	//	kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	//} else {
-	//	kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-	//}
-	//flag.Parse()
+	var kubeconfig *string
+	if home := homedir.HomeDir(); home != "" {
+		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+	} else {
+		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+	}
+	flag.Parse()
 
 	// use the current context in kubeconfig
-	//config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	//if err != nil {
-	//	panic(err.Error())
-	//}
-
-	clusterUrl, err := url.Parse(os.Getenv("cluster_url"))
+	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	if err != nil {
-		panic(err)
+		panic(err.Error())
 	}
 
-	config := &rest.Config{
-		Host:    clusterUrl.Host,
-		APIPath: clusterUrl.Path,
-		TLSClientConfig: rest.TLSClientConfig{
-			Insecure: true,
-		},
-		BearerToken: os.Getenv("token"),
-	}
+	//clusterUrl, err := url.Parse(os.Getenv("cluster_url"))
+	//if err != nil {
+	//	panic(err)
+	//}
+	//
+	//config := &rest.Config{
+	//	Host:    clusterUrl.Host,
+	//	APIPath: clusterUrl.Path,
+	//	TLSClientConfig: rest.TLSClientConfig{
+	//		Insecure: true,
+	//	},
+	//	BearerToken: os.Getenv("token"),
+	//}
 
 	// create the clientset
 	clientset, err := kubernetes.NewForConfig(config)
