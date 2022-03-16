@@ -69,6 +69,9 @@ func main() {
 	cm := &corev1.ConfigMap{}
 	cm.Name = os.Getenv("configmap_name")
 	cm.Namespace = os.Getenv("namespace")
+	if cm.Namespace == "" {
+		cm.Namespace = "default"
+	}
 
 	serviceList, err := clientset.CoreV1().Services(cm.Namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
@@ -98,7 +101,7 @@ func main() {
 					}
 					endpoints[protocols[n]] = append(endpoints[protocols[n]], Endpoint{
 						Name:     serviceList.Items[i].Name,
-						Endpoint: fmt.Sprintf("%s.%s:%d", serviceList.Items[i].Name, "beta", port),
+						Endpoint: fmt.Sprintf("%s.%s:%d", serviceList.Items[i].Name, cm.Namespace, port),
 					})
 				}
 			}
