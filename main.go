@@ -72,42 +72,49 @@ func main() {
 	if cm.Namespace == "" {
 		cm.Namespace = "default"
 	}
-
-	serviceList, err := clientset.CoreV1().Services(cm.Namespace).List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		panic(err.Error())
-	}
-
-	fmt.Printf("There are %d services in the cluster\n", len(serviceList.Items))
+	namespaceStr := os.Getenv("service_namespace")
 
 	endpoints := make(map[string][]Endpoint)
-	protocols := strings.Split(os.Getenv("protocols"), ",")
-	for i := range protocols {
-		protocols[i] = strings.Trim(protocols[i], " ")
-		endpoints[protocols[i]] = make([]Endpoint, 0)
-	}
-	for i := range serviceList.Items {
-		for j := range serviceList.Items[i].Spec.Ports {
-			for n := range protocols {
-				if strings.Index(serviceList.Items[i].Spec.Ports[j].Name, protocols[n]) > -1 {
-					var port int
-					switch serviceList.Items[i].Spec.Ports[j].TargetPort.String() {
-					case "http":
-						port = 80
-					case "https":
-						port = 443
-					default:
-						port = serviceList.Items[i].Spec.Ports[j].TargetPort.IntValue()
-					}
-					endpoints[protocols[n]] = append(endpoints[protocols[n]], Endpoint{
-						Name:     serviceList.Items[i].Name,
-						Endpoint: fmt.Sprintf("%s.%s:%d", serviceList.Items[i].Name, cm.Namespace, port),
-					})
-				}
-			}
+	for _, namespace := range strings.Split(namespaceStr, ",") {
+		serviceList, err := clientset.CoreV1().Services(namespace).List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			panic(err.Error())
+		}
 
+		fmt.Printf("There are %d services in the cluster\n", len(serviceList.Items))
+
+		protocols := strings.Split(os.Getenv("protocols"), ",")
+		for i := range protocols {
+			protocols[i] = strings.Trim(protocols[i], " ")
+			if endpoints[protocols[i]] == nil {
+				endpoints[protocols[i]] = make([]Endpoint, 0)
+			}
+		}
+		for i := range serviceList.Items {
+			for j := range serviceList.Items[i].Spec.Ports {
+				for n := range protocols {
+					if strings.Index(serviceList.Items[i].Spec.Ports[j].Name, protocols[n]) > -1 {
+						var port int
+						switch serviceList.Items[i].Spec.Ports[j].TargetPort.String() {
+						case "http":
+							port = 80
+						case "https":
+							port = 443
+						default:
+							port = serviceList.Items[i].Spec.Ports[j].TargetPort.IntValue()
+						}
+						endpoints[protocols[n]] = append(endpoints[protocols[n]], Endpoint{
+							Name:     fmt.Sprintf("[%s]%s", namespace, serviceList.Items[i].Name),
+							Endpoint: fmt.Sprintf("%s.%s:%d", serviceList.Items[i].Name, namespace, port),
+						})
+					}
+				}
+
+			}
 		}
 	}
+
+	//保存configmap
 	out, err := yaml.Marshal(endpoints)
 	if err != nil {
 		panic(err)
@@ -115,6 +122,7 @@ func main() {
 	cm.Data = map[string]string{
 		os.Getenv("config_name"): string(out),
 	}
+	fmt.Println(cm.Data)
 
 	_, err = clientset.CoreV1().ConfigMaps(cm.Namespace).Get(context.TODO(), cm.Name, metav1.GetOptions{})
 
